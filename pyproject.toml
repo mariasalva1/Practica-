@@ -1,0 +1,122 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "programacion23200"
+# MAJOR.MINOR = ENGINE_VERSION del motor
+version = "1.0.0"
+description = "Práctica Pong de Programación (23200), UIB: motor, bots de referencia y plantilla del bot"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Universitat de les Illes Balears" }
+]
+dependencies = [
+    # Bots de referencia Medium y Hard, compilados; ruedas en vendor/
+    "pong-ref-bots==1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "pytest-cov>=6.2",
+    "ruff>=0.12",
+    # La calidad de bot.py se califica con mypy (enunciado, apartado 7.2)
+    "mypy>=2.4",
+]
+# Temas 8 y 9; NumPy también está permitido en el bot (enunciado, apartado 3.4)
+scientific = [
+    "numpy>=2.3",
+    "sympy>=1.14",
+    "matplotlib>=3.10",
+]
+# Tema 7
+data = [
+    "pandas>=2.3",
+]
+# Notebook de análisis: marimo fijado para que todos vean lo mismo
+notebook = [
+    "marimo==0.25.0",
+    # pyzmq lo instala marimo; se fija el mínimo para la extensión de marimo de VS Code
+    "pyzmq>=27.3.0",
+]
+
+###############################################################################
+# uv
+###############################################################################
+
+[tool.uv]
+# `uv sync` instala todos los grupos: los alumnos los necesitan todos
+default-groups = ["dev", "scientific", "data", "notebook"]
+# Ruedas locales de pong-ref-bots
+find-links = ["vendor"]
+# Solo Linux: el lock no intenta resolver Windows ni macOS nativos
+environments = ["sys_platform == 'linux'"]
+# El lock exige ruedas para las dos arquitecturas soportadas.
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+
+###############################################################################
+# Build
+###############################################################################
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pong"]
+
+###############################################################################
+# Pytest
+###############################################################################
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["-ra"]
+
+###############################################################################
+# Ruff
+###############################################################################
+
+[tool.marimo.runtime]
+# Al abrir el notebook con «marimo edit» (o en VS Code) se ejecuta entero
+auto_instantiate = true
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# Los enunciados del notebook son párrafos de Markdown en una sola línea
+"notebook/*.py" = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+###############################################################################
+# mypy
+###############################################################################
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = "src"
+
+###############################################################################
+# Coverage
+###############################################################################
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

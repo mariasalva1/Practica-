@@ -1,0 +1,1682 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pong · Práctica 23200</title>
+<!--
+  Visualización de la Práctica Pong (enunciado, apartado 3.6).
+
+  Ejecuta el motor de la plantilla (src/pong/pong_engine.py) en el navegador
+  con Pyodide. Ábrela con el servidor de la raíz del repositorio:
+
+      uv run python -m http.server 8000
+
+  y después /pong.html en el puerto 8000 reenviado. No la abras como fichero.
+
+  Modos: en directo (tu bot contra Easy, contra sí mismo o contra una versión
+  de mis_bots/) y reproducción de registros JSON de partidas/.
+  Medium y Hard nunca se cargan en la página.
+-->
+<style>
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --panel-2: #eef0f3;
+  --text: #1c2430;
+  --muted: #5d6878;
+  --border: #d5dae1;
+  --accent: #0f766e;
+  --accent-text: #ffffff;
+  --ok: #15803d;
+  --ok-bg: #dcfce7;
+  --bad: #b91c1c;
+  --bad-bg: #fee2e2;
+  --warn: #92400e;
+  --warn-bg: #fef3c7;
+  --code-bg: #f6f7f9;
+  --field: #0e1621;
+  --field-line: rgba(226, 232, 240, 0.22);
+  --left: #2dd4bf;
+  --right: #fbbf24;
+  --ball: #f8fafc;
+  --radius: 10px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1017;
+    --panel: #121a24;
+    --panel-2: #18222f;
+    --text: #e3e8ef;
+    --muted: #93a0b2;
+    --border: #253244;
+    --accent: #2dd4bf;
+    --accent-text: #062a26;
+    --ok: #4ade80;
+    --ok-bg: #0f2a1a;
+    --bad: #f87171;
+    --bad-bg: #2d1416;
+    --warn: #fbbf24;
+    --warn-bg: #2b2210;
+    --code-bg: #0e151e;
+    --field: #070c12;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 var(--sans);
+}
+header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+.badge {
+  font: 12px var(--mono); padding: 2px 8px; border-radius: 999px;
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+}
+#estado { margin-left: auto; font-size: 13px; color: var(--muted); }
+#estado[data-estado="error"] { color: var(--bad); font-weight: 600; }
+#estado[data-estado="listo"] { color: var(--ok); }
+.aviso-global {
+  margin: 12px 16px 0; padding: 10px 14px; border-radius: var(--radius);
+  background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad);
+}
+.aviso-global code { font-family: var(--mono); }
+main {
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px;
+  padding: 16px; max-width: 1400px; margin: 0 auto;
+}
+@media (max-width: 980px) { main { grid-template-columns: minmax(0, 1fr); } }
+.tarjeta {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.pestanas { display: flex; gap: 4px; padding: 6px; }
+.pestanas button {
+  flex: 1; border: 0; background: transparent; color: var(--muted);
+  padding: 8px 10px; border-radius: 7px; font: inherit; font-weight: 600; cursor: pointer;
+}
+.pestanas button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); }
+#marcador {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding: 10px 14px; gap: 10px;
+}
+.jugador { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.jugador.der { justify-content: flex-end; text-align: right; }
+.jugador .nombre {
+  font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jugador .saque { width: 8px; height: 8px; border-radius: 50%; flex: none; visibility: hidden; }
+.jugador .saque.si { visibility: visible; }
+.izq .saque { background: var(--left); }
+.der .saque { background: var(--right); }
+.barra-lado { width: 4px; height: 26px; border-radius: 2px; flex: none; }
+.izq .barra-lado { background: var(--left); }
+.der .barra-lado { background: var(--right); }
+.cifras { font: 600 22px var(--mono); display: flex; gap: 14px; align-items: baseline; }
+.cifras .sets { font-size: 13px; color: var(--muted); font-weight: 500; }
+#info-tick { grid-column: 1 / -1; text-align: center; color: var(--muted); font: 12px var(--mono); }
+.lienzo { padding: 0 14px; }
+canvas {
+  display: block; width: 100%; height: auto; aspect-ratio: 4 / 3;
+  border-radius: 8px; background: var(--field);
+}
+.transporte {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 14px;
+}
+.b, select, input[type="number"] {
+  font: inherit; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px;
+}
+.b { cursor: pointer; min-width: 36px; display: inline-block; }
+.b:hover:not(:disabled) { border-color: var(--accent); }
+.b:disabled { opacity: .45; cursor: default; }
+.b.prim { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+.transporte .sep { flex: 1; }
+.linea-tiempo { display: flex; align-items: center; gap: 10px; padding: 0 14px 12px; }
+.linea-tiempo input { flex: 1; accent-color: var(--accent); }
+#etiqueta-tick { font: 12px var(--mono); color: var(--muted); min-width: 120px; text-align: right; }
+aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.seccion { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.seccion h2 { font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+label.campo { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+label.campo select, label.campo input { width: 100%; }
+.fila { display: flex; gap: 6px; align-items: end; }
+.fila > * { flex: 1; }
+.fila > .b { flex: none; }
+.nota { font-size: 12px; color: var(--muted); margin: 0; }
+.verif { padding: 8px 10px; border-radius: 7px; font-size: 13px; }
+.verif.ok { background: var(--ok-bg); color: var(--ok); }
+.verif.mal { background: var(--bad-bg); color: var(--bad); }
+.verif.aviso { background: var(--warn-bg); color: var(--warn); }
+.verif ul { margin: 4px 0 0; padding-left: 18px; }
+.checks { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.paneles {
+  grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;
+}
+details.tarjeta > summary {
+  cursor: pointer; padding: 10px 14px; font-weight: 600; list-style: none;
+  display: flex; align-items: center; gap: 8px;
+}
+details.tarjeta > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
+details.tarjeta[open] > summary::before { transform: rotate(90deg); }
+details.tarjeta > summary .extra { margin-left: auto; font-weight: 400; }
+.cuerpo { padding: 0 14px 14px; }
+pre, .tabla {
+  margin: 0; font: 12px/1.5 var(--mono); background: var(--code-bg);
+  border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px;
+  overflow: auto; max-height: 320px; white-space: pre-wrap; word-break: break-word;
+}
+.tabla { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; white-space: normal; }
+.tabla .k { color: var(--muted); }
+#consola { max-height: 260px; display: flex; flex-direction: column; gap: 4px; }
+.msg { border-left: 3px solid var(--border); padding: 2px 8px; cursor: pointer; white-space: pre-wrap; }
+.msg:hover { background: var(--panel-2); }
+.msg.left { border-left-color: var(--left); }
+.msg.right { border-left-color: var(--right); }
+.msg .cab { color: var(--muted); }
+.msg.error .cuerpo-msg { color: var(--bad); }
+.msg.aviso .cuerpo-msg { color: var(--warn); }
+.oculto { display: none !important; }
+kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pong · Práctica 23200</h1>
+  <span class="badge" id="version">motor —</span>
+  <span class="badge">Pyodide 0.29.5 · Python 3.13</span>
+  <span id="estado" data-estado="cargando" role="status">Cargando Pyodide…</span>
+</header>
+<div id="aviso-global" class="aviso-global oculto"></div>
+
+<main>
+  <section class="tarjeta" aria-label="Partida">
+    <div id="marcador">
+      <div class="jugador izq">
+        <span class="barra-lado"></span><span class="saque" id="saque-izq" title="Saca"></span>
+        <span class="nombre" id="nombre-izq">—</span>
+      </div>
+      <div class="cifras">
+        <span class="sets" id="sets-izq">0</span><span id="puntos-izq">0</span>
+        <span>–</span>
+        <span id="puntos-der">0</span><span class="sets" id="sets-der">0</span>
+      </div>
+      <div class="jugador der">
+        <span class="nombre" id="nombre-der">—</span>
+        <span class="saque" id="saque-der" title="Saca"></span><span class="barra-lado"></span>
+      </div>
+      <div id="info-tick">tick 0 · golpes 0 · nulos 0</div>
+    </div>
+    <div class="lienzo"><canvas id="campo" width="800" height="600" aria-label="Campo de juego"></canvas></div>
+    <div class="transporte">
+      <button class="b" id="b-inicio" title="Ir al primer tick">⏮</button>
+      <button class="b" id="b-atras" title="Retroceder 1 tick (←)">◀ 1</button>
+      <button class="b prim" id="b-play" title="Reproducir o pausar (espacio)">▶</button>
+      <button class="b" id="b-adelante" title="Avanzar 1 tick (→)">1 ▶</button>
+      <button class="b" id="b-evento" title="Hasta el próximo golpe, punto o nulo (Mayús + →)">⏭ golpe/punto</button>
+      <button class="b" id="b-final" title="Hasta el final de la partida (en directo, la juega entera)">⏩ final</button>
+      <span class="sep"></span>
+      <label class="nota" for="velocidad">Velocidad</label>
+      <select id="velocidad" title="Ticks por segundo; el juego real va a 60">
+        <option value="15">¼×</option>
+        <option value="30">½×</option>
+        <option value="60" selected>1×</option>
+        <option value="120">2×</option>
+        <option value="240">4×</option>
+        <option value="Infinity">máx.</option>
+      </select>
+    </div>
+    <div class="linea-tiempo">
+      <input type="range" id="tiempo" min="0" max="0" value="0" step="1" aria-label="Tick">
+      <span id="etiqueta-tick">0 / 0</span>
+    </div>
+  </section>
+
+  <aside>
+    <div class="tarjeta">
+      <div class="pestanas" role="tablist">
+        <button role="tab" id="tab-directo" aria-selected="true">En directo</button>
+        <button role="tab" id="tab-repro" aria-selected="false">Reproducción</button>
+      </div>
+    </div>
+
+    <div class="tarjeta seccion" id="panel-directo">
+      <h2>Partida en directo</h2>
+      <label class="campo">Izquierda
+        <select id="sel-izq"></select>
+      </label>
+      <label class="campo">Derecha
+        <select id="sel-der"></select>
+      </label>
+      <div class="fila">
+        <label class="campo">Semilla <input type="number" id="semilla" min="0" step="1"></label>
+        <button class="b" id="b-dado" title="Semilla al azar">🎲</button>
+      </div>
+      <div class="fila">
+        <button class="b prim" id="b-nueva">Nueva partida</button>
+        <button class="b" id="b-recargar" title="Vuelve a leer bot.py y mis_bots/ y repite la partida">Recargar bots</button>
+      </div>
+      <button class="b" id="b-descargar" disabled title="Registro JSON de la partida, disponible al terminar">Descargar JSON</button>
+      <p class="nota">Tras editar <code>bot.py</code>, pulsa «Recargar bots». Para enfrentarte a una versión anterior, cópiala en <code>mis_bots/</code> (por ejemplo, <code>mis_bots/v1.py</code>).</p>
+      <p class="nota" id="tiempos">Tiempos de decide: —</p>
+    </div>
+
+    <div class="tarjeta seccion oculto" id="panel-repro">
+      <h2>Reproducir una partida</h2>
+      <div class="fila">
+        <label class="campo">Registros en <code>partidas/</code>
+          <select id="sel-partida"><option value="">—</option></select>
+        </label>
+        <button class="b" id="b-listar" title="Actualizar la lista">↻</button>
+      </div>
+      <label class="b" style="text-align:center">Abrir fichero…
+        <input type="file" id="fichero" accept=".json,application/json" class="oculto">
+      </label>
+      <div id="verificacion" class="oculto"></div>
+      <p class="nota">Genera registros con <code>pong.runner</code> o con <code>pong.evaluate --guardar</code>, que crea una carpeta por ejecución con sus partidas ordenadas de la peor a la mejor. La página reproduce la partida con el motor a partir de la semilla y los comandos: así ves partidas contra Medium y Hard sin cargar sus bots.</p>
+    </div>
+
+    <div class="tarjeta seccion">
+      <h2>Ver</h2>
+      <div class="checks">
+        <label><input type="checkbox" id="ver-estela" checked> Estela</label>
+        <label><input type="checkbox" id="ver-dep" checked> Dibujo de depuración</label>
+      </div>
+      <p class="nota">Teclas: <kbd>espacio</kbd> reproducir/pausar · <kbd>←</kbd> <kbd>→</kbd> un tick · <kbd>Mayús</kbd>+<kbd>→</kbd> próximo golpe o punto.</p>
+    </div>
+  </aside>
+
+  <div class="paneles">
+    <details class="tarjeta" open>
+      <summary>Lo que ve el bot
+        <span class="extra"><select id="sel-vista" title="Lado"><option value="0">izquierda</option><option value="1">derecha</option></select></span>
+      </summary>
+      <div class="cuerpo"><pre id="estado-bot">—</pre></div>
+    </details>
+    <details class="tarjeta" open>
+      <summary>Valores reales del motor</summary>
+      <div class="cuerpo"><div class="tabla" id="verdad"></div>
+        <p class="nota" style="margin-top:8px">Coordenadas globales, sin normalizar. Tu bot no recibe vx, vy ni ay: tiene que estimarlos.</p>
+      </div>
+    </details>
+    <details class="tarjeta" open>
+      <summary>Depuración de los bots</summary>
+      <div class="cuerpo"><pre id="dep-texto">—</pre>
+        <p class="nota" style="margin-top:8px">Lo que tu bot guarda en <code>self.depuracion</code>: <code>objetivo_y</code>, <code>trayectoria</code>, <code>puntos</code> y <code>texto</code>, en las coordenadas de su <code>state</code>.</p>
+      </div>
+    </details>
+    <details class="tarjeta" open>
+      <summary>Consola <span class="extra"><label class="nota"><input type="checkbox" id="solo-errores"> solo errores</label></span></summary>
+      <div class="cuerpo"><div class="tabla" id="consola" style="display:flex"><span class="nota">Los <code>print</code> y las excepciones de los bots aparecen aquí. Haz clic en un mensaje para ir a su tick.</span></div></div>
+    </details>
+  </div>
+</main>
+
+<script type="text/x-python" id="pong-web-py">
+"""Capa Python de pong.html: sesiones en directo y reproducciones.
+
+Se ejecuta en Pyodide y usa el motor y el registro de la plantilla sin
+cambios. No dibuja nada: guarda un fotograma por tick y la página lo pinta.
+
+Fotograma del tick t: el estado que vieron los bots en ese tick (antes de
+``step``) y los comandos que se aplicaron. El último fotograma es el estado
+final, sin comandos.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import linecache
+import math
+import sys
+import tempfile
+import time
+import traceback
+import types
+from pathlib import Path
+
+from pong import pong_engine as pe
+from pong.registro import Partida, decodificar_comandos, guardar_json
+
+FASES = (pe.SERVING, pe.PLAYING, pe.MATCH_OVER)
+MAX_MENSAJES = 5000
+MAX_TEXTO = 2000
+MAX_PUNTOS_DEP = 400
+LADOS = ("left", "right")
+
+
+# ---------------------------------------------------------------------------
+# Carga de bots desde el código fuente
+# ---------------------------------------------------------------------------
+
+
+def cargar_clase(nombre_modulo: str, codigo: str, ruta: str) -> type:
+    """Ejecuta ``codigo`` como el módulo ``nombre_modulo`` y devuelve su ``Bot``.
+
+    El módulo se registra en ``sys.modules`` antes de ejecutarlo, como hace
+    ``import``, para que funcionen ``dataclasses`` y similares.
+
+    Raises:
+        AttributeError: si el fichero no define la clase ``Bot``.
+    """
+    modulo = types.ModuleType(nombre_modulo)
+    modulo.__file__ = ruta
+    # Para que las trazas de error muestren las líneas del fichero del bot
+    linecache.cache[ruta] = (len(codigo), None, codigo.splitlines(True), ruta)
+    sys.modules[nombre_modulo] = modulo
+    exec(compile(codigo, ruta, "exec"), modulo.__dict__)
+    if not hasattr(modulo, "Bot"):
+        raise AttributeError(f"{ruta} no define la clase Bot")
+    return modulo.Bot
+
+
+# ---------------------------------------------------------------------------
+# Dibujo de depuración (convención de pong.html, no del motor)
+# ---------------------------------------------------------------------------
+
+
+def _numero(v: object) -> float | None:
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    v = float(v)
+    return v if math.isfinite(v) else None
+
+
+def _puntos(v: object) -> list[list[float]]:
+    salida: list[list[float]] = []
+    if not isinstance(v, (list, tuple)):
+        return salida
+    for p in v[:MAX_PUNTOS_DEP]:
+        if isinstance(p, (list, tuple)) and len(p) == 2:
+            x, y = _numero(p[0]), _numero(p[1])
+            if x is not None and y is not None:
+                salida.append([x, y])
+    return salida
+
+
+def leer_depuracion(bot: object) -> str | None:
+    """Copia segura de ``bot.depuracion`` como JSON, o ``None``.
+
+    Claves reconocidas, en coordenadas normalizadas (las del ``state``):
+    ``objetivo_y`` (número), ``trayectoria`` (lista de (x, y), se une con
+    una línea), ``puntos`` (lista de (x, y), se marcan) y ``texto`` (str).
+    Lo demás se ignora.
+    """
+    dep = getattr(bot, "depuracion", None)
+    if not isinstance(dep, dict):
+        return None
+    datos: dict = {}
+    y = _numero(dep.get("objetivo_y"))
+    if y is not None:
+        datos["objetivo_y"] = y
+    for clave in ("trayectoria", "puntos"):
+        if clave in dep:
+            datos[clave] = _puntos(dep[clave])
+    if "texto" in dep:
+        datos["texto"] = str(dep["texto"])[:MAX_TEXTO]
+    return json.dumps(datos) if datos else None
+
+
+def traza() -> str:
+    """Traza de la excepción en curso sin los marcos de este módulo."""
+    tipo, valor, tb = sys.exc_info()
+    propio = traza.__code__.co_filename
+    marcos = [m for m in traceback.extract_tb(tb) if m.filename != propio]
+    partes = ["Traceback (most recent call last):\n"] if marcos else []
+    partes += traceback.format_list(marcos)
+    partes += traceback.format_exception_only(tipo, valor)
+    return "".join(partes).rstrip("\n")
+
+
+def es_evento(antes: tuple, despues: tuple) -> bool:
+    """Entre dos fotogramas seguidos hubo un golpe, un punto, un nulo o el final."""
+    return (
+        despues[16] > antes[16]
+        or despues[10:14] != antes[10:14]
+        or despues[17] != antes[17]
+        or despues[1] == FASES.index(pe.MATCH_OVER)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Jugadores
+# ---------------------------------------------------------------------------
+
+
+class Jugador:
+    """Un bot en una partida en directo, con su salida y sus tiempos."""
+
+    def __init__(self, nombre: str, clase: type, lado: int, semilla: int) -> None:
+        self.nombre = nombre
+        self.lado = lado
+        self.llamadas = 0
+        self.total = 0.0
+        self.maximo = 0.0
+        self.bot = clase(semilla)
+
+    def decidir(self, estado: dict, sesion: Sesion) -> str:
+        """Como ``pe.ask_bot``, pero guarda los ``print`` y las excepciones."""
+        tick = estado["tick"]
+        salida = io.StringIO()
+        anterior = sys.stdout
+        sys.stdout = salida
+        t0 = time.perf_counter()
+        try:
+            valor = self.bot.decide(estado)
+            error = None
+        except Exception:
+            valor = "STAY"
+            error = traza()
+        finally:
+            dt = time.perf_counter() - t0
+            sys.stdout = anterior
+        self.llamadas += 1
+        self.total += dt
+        self.maximo = max(self.maximo, dt)
+        texto = salida.getvalue()
+        if texto:
+            sesion.mensaje(tick, self.lado, "print", texto.rstrip("\n"))
+        if error is not None:
+            sesion.mensaje(tick, self.lado, "error", error)
+        comando = pe.sanitize_command(valor)
+        if error is None and comando != valor:
+            sesion.mensaje(
+                tick,
+                self.lado,
+                "aviso",
+                f"decide devolvió {valor!r}: cuenta como STAY",
+            )
+        return comando
+
+    def tiempos(self) -> dict:
+        media = 1000.0 * self.total / self.llamadas if self.llamadas else 0.0
+        return {"media_ms": media, "maximo_ms": 1000.0 * self.maximo}
+
+
+# ---------------------------------------------------------------------------
+# Sesión
+# ---------------------------------------------------------------------------
+
+
+class Sesion:
+    """Una partida (en directo o reproducida) y todos sus fotogramas."""
+
+    def __init__(self, semilla: int, nombres: tuple[str, str]) -> None:
+        self.semilla = semilla
+        self.nombres = nombres
+        self.match = pe.Match(semilla)
+        self.fotogramas: list[tuple] = []
+        self.comandos: list[tuple[str, str]] = []
+        self.depuracion: tuple[list, list] = ([], [])
+        self.mensajes: list[dict] = []
+        self.descartados = 0
+        self.jugadores: list[Jugador | None] = [None, None]
+        self.abandono: str | None = None
+        self.tiempo_excedido: str | None = None  # partida cortada por tiempo
+        self.verificacion: dict | None = None
+        self._ultima_dep: list[str | None] = [None, None]
+
+    # -- construcción ----------------------------------------------------------
+
+    @classmethod
+    def directo(
+        cls,
+        semilla: int,
+        izquierda: tuple[str, type],
+        derecha: tuple[str, type],
+    ) -> Sesion:
+        """Partida en directo. Semillas de los bots: 2s+1 y 2s+2.
+
+        Si un constructor falla, la partida no se juega y ese bot pierde.
+        """
+        s = cls(semilla, (izquierda[0], derecha[0]))
+        for lado, (nombre, clase), semilla_bot in (
+            (pe.LEFT, izquierda, 2 * semilla + 1),
+            (pe.RIGHT, derecha, 2 * semilla + 2),
+        ):
+            try:
+                s.jugadores[lado] = Jugador(nombre, clase, lado, semilla_bot)
+            except Exception:
+                s.abandono = LADOS[lado]
+                s.mensaje(
+                    0,
+                    lado,
+                    "error",
+                    f"El constructor de {nombre} falló: pierde sin jugar.\n"
+                    + traza(),
+                )
+                break
+        s._anotar(None)
+        return s
+
+    @classmethod
+    def reproduccion(cls, texto: str) -> Sesion:
+        """Reproduce un registro JSON y comprueba que coincide."""
+        datos = json.loads(texto)
+        bots = datos.get("bots", {})
+        s = cls(
+            int(datos["seed"]),
+            (str(bots.get("left", "izquierda")), str(bots.get("right", "derecha"))),
+        )
+        problemas: list[str] = []
+        version = datos.get("engine_version")
+        if version != pe.ENGINE_VERSION:
+            problemas.append(
+                f"El registro es de la versión {version} del motor y el motor "
+                f"es la {pe.ENGINE_VERSION}."
+            )
+        s.abandono = datos.get("abandono")
+        if s.abandono is not None:
+            s._anotar(None)
+            s.verificacion = {
+                "ok": not problemas,
+                "problemas": problemas,
+                "abandono": s.abandono,
+            }
+            return s
+        s.tiempo_excedido = datos.get("tiempo_excedido")
+        comandos = decodificar_comandos(datos["commands"])
+        s._anotar(None)
+        for c in comandos:
+            if s.match.over:
+                problemas.append(
+                    f"La partida termina en el tick {s.match.tick}, pero el "
+                    f"registro tiene {len(comandos)} comandos."
+                )
+                break
+            s._paso(c)
+        if s.tiempo_excedido is None:
+            if not s.match.over and not problemas:
+                problemas.append(
+                    f"Los {len(comandos)} comandos no terminan la partida."
+                )
+        elif s.match.over and not problemas:
+            problemas.append(
+                "El registro dice que la partida se cortó por tiempo, pero sus "
+                "comandos la terminan."
+            )
+        problemas.extend(s._comparar(datos))
+        s.verificacion = {
+            "ok": not problemas,
+            "problemas": problemas,
+            "tiempo_excedido": s.tiempo_excedido,
+        }
+        return s
+
+    def _comparar(self, datos: dict) -> list[str]:
+        m = self.match
+        problemas = []
+        rallies = datos.get("rallies", [])
+        for i, (a, b) in enumerate(zip(m.rallies, rallies, strict=False)):
+            if a != b:
+                problemas.append(
+                    f"El intercambio {i + 1} no coincide: el motor da {a} y el "
+                    f"registro {b}."
+                )
+                break
+        else:
+            if len(m.rallies) != len(rallies):
+                problemas.append(
+                    f"El motor da {len(m.rallies)} intercambios y el registro "
+                    f"{len(rallies)}."
+                )
+        sets = {"left": m.sets[pe.LEFT], "right": m.sets[pe.RIGHT]}
+        if datos.get("sets") != sets:
+            problemas.append(
+                f"Sets: el motor da {sets} y el registro {datos.get('sets')}."
+            )
+        esperado = self._resultado()
+        if datos.get("result") != esperado:
+            problemas.append(
+                f"Resultado: el motor da {esperado!r} y el registro "
+                f"{datos.get('result')!r}."
+            )
+        return problemas
+
+    # -- evolución -------------------------------------------------------------
+
+    def mensaje(self, tick: int, lado: int, tipo: str, texto: str) -> None:
+        if len(self.mensajes) >= MAX_MENSAJES:
+            self.descartados += 1
+            return
+        self.mensajes.append(
+            {"tick": tick, "lado": LADOS[lado], "tipo": tipo, "texto": texto}
+        )
+
+    def _anotar(self, comandos: tuple[str, str] | None) -> None:
+        m = self.match
+        self.fotogramas.append(
+            (
+                m.tick,
+                FASES.index(m.phase),
+                m.ball_x,
+                m.ball_y,
+                m.vx,
+                m.vy,
+                m.ay,
+                m.speed,
+                m.paddles[0],
+                m.paddles[1],
+                m.points[0],
+                m.points[1],
+                m.sets[0],
+                m.sets[1],
+                m.server,
+                m.serve_ticks_left,
+                m.rally_hits,
+                m.lets,
+                None if comandos is None else comandos[0],
+                None if comandos is None else comandos[1],
+            )
+        )
+
+    def _paso(self, comandos: tuple[str, str]) -> None:
+        """Completa el fotograma actual con los comandos y ejecuta el tick."""
+        actual = self.fotogramas[-1]
+        self.fotogramas[-1] = actual[:18] + comandos
+        self.comandos.append(comandos)
+        self.match.step(*comandos)
+        self._anotar(None)
+
+    @property
+    def terminada(self) -> bool:
+        return (
+            self.match.over
+            or self.abandono is not None
+            or self.tiempo_excedido is not None
+        )
+
+    def avanzar(self, n: int, hasta_evento: bool = False) -> int:
+        """Juega hasta ``n`` ticks en directo; devuelve cuántos ha jugado.
+
+        Con ``hasta_evento`` se detiene tras el primer golpe, punto o nulo.
+        """
+        jugados = 0
+        while jugados < n and not self.terminada:
+            m = self.match
+            estados = (m.state_for(pe.LEFT), m.state_for(pe.RIGHT))
+            comandos = []
+            for lado in (pe.LEFT, pe.RIGHT):
+                jugador = self.jugadores[lado]
+                comandos.append(jugador.decidir(estados[lado], self))
+                self._guardar_dep(lado, jugador.bot)
+            self._paso((comandos[0], comandos[1]))
+            jugados += 1
+            if hasta_evento and es_evento(self.fotogramas[-2], self.fotogramas[-1]):
+                break
+        return jugados
+
+    def _guardar_dep(self, lado: int, bot: object) -> None:
+        try:
+            texto = leer_depuracion(bot)
+        except Exception:
+            texto = None
+        if texto == self._ultima_dep[lado]:
+            texto = self._ultima_dep[lado]  # misma cadena: no duplica memoria
+        self._ultima_dep[lado] = texto
+        self.depuracion[lado].append(texto)
+
+    # -- consulta desde la página ------------------------------------------------
+
+    def total(self) -> int:
+        """Número de fotogramas."""
+        return len(self.fotogramas)
+
+    def fotograma(self, i: int) -> dict:
+        f = self.fotogramas[i]
+        return {
+            "tick": f[0],
+            "fase": FASES[f[1]],
+            "bola_x": f[2],
+            "bola_y": f[3],
+            "vx": f[4],
+            "vy": f[5],
+            "ay": f[6],
+            "velocidad": f[7],
+            "pala_izq": f[8],
+            "pala_der": f[9],
+            "puntos": [f[10], f[11]],
+            "sets": [f[12], f[13]],
+            "saca": LADOS[f[14]],
+            "saque_restante": f[15],
+            "golpes": f[16],
+            "nulos": f[17],
+            "comandos": [f[18], f[19]],
+            "depuracion": [self._dep(0, i), self._dep(1, i)],
+        }
+
+    def _dep(self, lado: int, i: int) -> str | None:
+        d = self.depuracion[lado]
+        return d[i] if i < len(d) else None
+
+    def estela(self, i: int, n: int) -> list[float]:
+        """Posiciones de la bola en los ``n`` fotogramas anteriores a ``i``,
+        sin cruzar el comienzo del intercambio actual."""
+        salida: list[float] = []
+        fase_juego = FASES.index(pe.PLAYING)
+        for f in self.fotogramas[max(0, i - n) : i + 1]:
+            if f[1] != fase_juego:
+                salida.clear()
+                continue
+            salida.extend((f[2], f[3]))
+        return salida
+
+    def estado_bot(self, i: int, lado: int) -> str:
+        """El ``state`` normalizado que vio el bot de ``lado`` en el tick ``i``.
+
+        Se reconstruye con ``Match.state_for`` del propio motor.
+        """
+        f = self.fotogramas[i]
+        vista = types.SimpleNamespace(
+            tick=f[0],
+            phase=FASES[f[1]],
+            ball_x=f[2],
+            ball_y=f[3],
+            paddles=[f[8], f[9]],
+            points=[f[10], f[11]],
+            sets=[f[12], f[13]],
+            server=f[14],
+            serve_ticks_left=f[15],
+            rally_hits=f[16],
+            lets=f[17],
+        )
+        return json.dumps(pe.Match.state_for(vista, lado))
+
+    def buscar_evento(self, i: int) -> int | None:
+        """Primer fotograma posterior a ``i`` tras un golpe, punto o nulo."""
+        for j in range(i + 1, len(self.fotogramas)):
+            if es_evento(self.fotogramas[j - 1], self.fotogramas[j]):
+                return j
+        return None
+
+    def mensajes_desde(self, inicio: int) -> str:
+        return json.dumps(self.mensajes[inicio:])
+
+    def resumen(self) -> str:
+        m = self.match
+        datos = {
+            "semilla": self.semilla,
+            "nombres": list(self.nombres),
+            "terminada": self.terminada,
+            "resultado": self._resultado(),
+            "abandono": self.abandono,
+            "tiempo_excedido": self.tiempo_excedido,
+            "sets": list(m.sets),
+            "tick": m.tick,
+            "intercambios": len(m.rallies),
+            "verificacion": self.verificacion,
+            "descartados": self.descartados,
+            "tiempos": [j.tiempos() if j is not None else None for j in self.jugadores],
+        }
+        return json.dumps(datos)
+
+    def _resultado(self) -> str | None:
+        perdedor = self.abandono if self.abandono is not None else self.tiempo_excedido
+        if perdedor is not None:
+            return "right" if perdedor == "left" else "left"
+        return self.match.result
+
+    def json_registro(self) -> str:
+        """Registro JSON, idéntico al que escribe ``registro.guardar_json``."""
+        partida = Partida(
+            seed=self.semilla,
+            nombres=self.nombres,
+            match=self.match,
+            comandos=self.comandos,
+            abandono=self.abandono,
+            tiempo_excedido=self.tiempo_excedido,
+        )
+        ruta = guardar_json(partida, _ruta_temporal(self.semilla))
+        return ruta.read_text(encoding="utf-8")
+
+
+def _ruta_temporal(semilla: int) -> Path:
+    return Path(tempfile.gettempdir()) / "pong_web" / f"partida_{semilla}.json"
+
+
+# ---------------------------------------------------------------------------
+# Puntos de entrada para la página (argumentos simples, resultados en JSON)
+# ---------------------------------------------------------------------------
+
+
+def nueva_directo(
+    semilla: int, nombre_izq: str, clase_izq: type, nombre_der: str, clase_der: type
+) -> Sesion:
+    """Crea una partida en directo con los dos bots dados."""
+    return Sesion.directo(
+        int(semilla), (nombre_izq, clase_izq), (nombre_der, clase_der)
+    )
+
+
+def fotograma_json(sesion: Sesion, i: int) -> str:
+    return json.dumps(sesion.fotograma(int(i)))
+
+
+def estela_json(sesion: Sesion, i: int, n: int) -> str:
+    return json.dumps(sesion.estela(int(i), int(n)))
+</script>
+
+<script>
+"use strict";
+(() => {
+  const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.29.5/full/";
+  const W = 800, H = 600, R = 6, PALA_H = 80, PALA_G = 10, X_IZQ = 30, X_DER = 770;
+  const ESTELA = 40;
+  const FUENTES_MOTOR = {
+    "pong/pong_engine.py": "src/pong/pong_engine.py",
+    "pong/registro.py": "src/pong/registro.py",
+    "pong/bots_ref/easy.py": "src/pong/bots_ref/easy.py",
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const CONSOLA_VACIA = '<span class="nota">Los <code>print</code> y las excepciones de los bots aparecen aquí. ' +
+    "Haz clic en un mensaje para ir a su tick.</span>";
+  const ui = {
+    estado: $("estado"), aviso: $("aviso-global"), version: $("version"),
+    lienzo: $("campo"), tiempo: $("tiempo"), etiqueta: $("etiqueta-tick"),
+    play: $("b-play"), velocidad: $("velocidad"),
+  };
+  const ctx = ui.lienzo.getContext("2d");
+
+  let py = null;          // Pyodide
+  let pw = null;          // módulo pong_web
+  let sesion = null;      // Sesion de Python
+  let modo = "directo";   // "directo" | "repro"
+  let total = 0;          // fotogramas disponibles
+  let cursor = 0;         // fotograma mostrado
+  let reproduciendo = false;
+  let acumulado = 0;
+  let ultimoT = 0;
+  let trabajando = false; // bucle largo en curso (ir al final)
+  let cancelar = false;
+  let nMensajes = 0;
+  let resumen = null;
+  let contadorModulos = 0;
+  let generacion = 0;     // descarta cargas de bots que ya no son la última
+  let ultimoPanel = 0;
+  const colores = {};
+
+  // -------------------------------------------------------------------------
+  // Utilidades
+  // -------------------------------------------------------------------------
+
+  function ponerEstado(texto, estado = "cargando") {
+    ui.estado.textContent = texto;
+    ui.estado.dataset.estado = estado;
+  }
+
+  function avisoGlobal(html) {
+    ui.aviso.innerHTML = html;
+    ui.aviso.classList.remove("oculto");
+  }
+
+  function leerColores() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ["field", "field-line", "left", "right", "ball"]) {
+      colores[k] = cs.getPropertyValue("--" + k).trim();
+    }
+  }
+
+  async function leer(ruta) {
+    const r = await fetch(new URL(ruta, location.href), { cache: "no-store" });
+    if (!r.ok) throw new Error(`No se pudo leer ${ruta} (HTTP ${r.status})`);
+    return r.text();
+  }
+
+  async function listar(carpeta, extension) {
+    // Listado de directorio de python -m http.server
+    let r;
+    try {
+      r = await fetch(new URL(carpeta, location.href), { cache: "no-store" });
+    } catch (e) { return []; }
+    if (!r.ok) return [];
+    const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+    const nombres = [];
+    for (const a of doc.querySelectorAll("a[href]")) {
+      const n = decodeURIComponent(a.getAttribute("href"));
+      if (n.endsWith(extension) && !n.includes("/") && !n.startsWith("_")) nombres.push(n);
+    }
+    return nombres.sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+  }
+
+  async function listarCarpeta(carpeta) {
+    // Ficheros y subcarpetas de un listado de python -m http.server
+    let r;
+    try {
+      r = await fetch(new URL(carpeta, location.href), { cache: "no-store" });
+    } catch (e) { return { ficheros: [], carpetas: [] }; }
+    if (!r.ok) return { ficheros: [], carpetas: [] };
+    const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+    const ficheros = [], carpetas = [];
+    for (const a of doc.querySelectorAll("a[href]")) {
+      const n = decodeURIComponent(a.getAttribute("href"));
+      if (n.startsWith("_") || n.startsWith(".") || n.startsWith("?")) continue;
+      if (n.endsWith("/") && !n.slice(0, -1).includes("/")) carpetas.push(n);
+      else if (!n.includes("/")) ficheros.push(n);
+    }
+    return { ficheros, carpetas };
+  }
+
+  function porNombre(a, b) { return a.localeCompare(b, "es", { numeric: true }); }
+
+  function leerResumen(texto) {
+    // resumen.csv de evaluate: filas de la peor a la mejor partida
+    const lineas = texto.trim().split(/\r?\n/);
+    const cab = lineas.shift().split(",");
+    return lineas.map((l) => Object.fromEntries(l.split(",").map((v, i) => [cab[i], v])));
+  }
+
+  function textoError(e) {
+    // PythonError trae la traza completa en message
+    return (e && e.message) ? e.message : String(e);
+  }
+
+  function cargarScript(src) {
+    return new Promise((ok, mal) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = ok;
+      s.onerror = () => mal(new Error("No se pudo descargar " + src));
+      document.head.appendChild(s);
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Arranque
+  // -------------------------------------------------------------------------
+
+  async function arrancar() {
+    leerColores();
+    if (location.protocol === "file:") {
+      avisoGlobal("Esta página no funciona abierta como fichero. En la raíz del repositorio ejecuta " +
+        "<code>uv run python -m http.server 8000</code> y abre <code>/pong.html</code> en el puerto 8000.");
+      ponerEstado("Sin servidor", "error");
+      return;
+    }
+    try {
+      await cargarScript(PYODIDE_URL + "pyodide.js");
+      py = await loadPyodide({ indexURL: PYODIDE_URL });
+    } catch (e) {
+      avisoGlobal("No se pudo cargar Pyodide desde la CDN. La página necesita conexión a internet. " +
+        "Detalle: " + textoError(e));
+      ponerEstado("Error al cargar Pyodide", "error");
+      return;
+    }
+    ponerEstado("Cargando el motor…");
+    try {
+      py.FS.mkdirTree("/home/pyodide/pong/bots_ref");
+      py.FS.writeFile("/home/pyodide/pong/__init__.py", '"""Práctica Pong (visualización)."""\n');
+      py.FS.writeFile("/home/pyodide/pong/bots_ref/__init__.py", "from .easy import Easy\n");
+      for (const [destino, origen] of Object.entries(FUENTES_MOTOR)) {
+        py.FS.writeFile("/home/pyodide/" + destino, await leer(origen));
+      }
+      py.FS.writeFile("/home/pyodide/pong_web.py", $("pong-web-py").textContent);
+      py.runPython("import sys\nif '/home/pyodide' not in sys.path: sys.path.insert(0, '/home/pyodide')");
+      pw = py.pyimport("pong_web");
+      const version = py.runPython("from pong import pong_engine as _pe\n_pe.ENGINE_VERSION");
+      ui.version.textContent = "motor " + version;
+    } catch (e) {
+      avisoGlobal("No se pudo cargar el motor del repositorio: " + textoError(e) +
+        ". Comprueba que sirves la raíz del repositorio con <code>uv run python -m http.server 8000</code>.");
+      ponerEstado("Error al cargar el motor", "error");
+      return;
+    }
+    await rellenarSelectoresBots();
+    await rellenarPartidas();
+    $("semilla").value = semillaAzar();
+    conectarControles();
+    ponerEstado("Listo", "listo");
+    await nuevaPartida();
+    requestAnimationFrame(bucle);
+    window.pong.resolverListo();
+  }
+
+  function semillaAzar() { return Math.floor(Math.random() * 1e6); }
+
+  // -------------------------------------------------------------------------
+  // Bots
+  // -------------------------------------------------------------------------
+
+  async function rellenarSelectoresBots() {
+    const opciones = [
+      { valor: "mi_bot", texto: "Mi bot (src/pong/bot.py)" },
+      { valor: "easy", texto: "Easy (referencia)" },
+    ];
+    for (const n of await listar("mis_bots/", ".py")) {
+      opciones.push({ valor: "mis_bots/" + n, texto: "mis_bots/" + n });
+    }
+    for (const [id, defecto] of [["sel-izq", "mi_bot"], ["sel-der", "easy"]]) {
+      const sel = $(id);
+      const previo = sel.value || defecto;
+      sel.innerHTML = "";
+      for (const o of opciones) sel.add(new Option(o.texto, o.valor));
+      sel.value = opciones.some((o) => o.valor === previo) ? previo : defecto;
+    }
+  }
+
+  async function claseBot(valor) {
+    // Devuelve [nombre, clase de Python]
+    if (valor === "easy") {
+      return ["easy", py.runPython("from pong.bots_ref.easy import Easy as _E\n_E")];
+    }
+    const ruta = valor === "mi_bot" ? "src/pong/bot.py" : valor;
+    const codigo = await leer(ruta);
+    await py.loadPackagesFromImports(codigo);
+    contadorModulos += 1;
+    const modulo = (valor === "mi_bot" ? "bot_alumno" : "mis_bots_" + valor.replace(/\W/g, "_")) +
+      "_" + contadorModulos;
+    const nombre = valor === "mi_bot" ? "mi_bot" : valor.replace(/\.py$/, "");
+    return [nombre, pw.cargar_clase(modulo, codigo, ruta)];
+  }
+
+  // -------------------------------------------------------------------------
+  // Sesiones
+  // -------------------------------------------------------------------------
+
+  function cambiarSesion(nueva) {
+    if (sesion) sesion.destroy();
+    sesion = nueva;
+    total = sesion.total();
+    cursor = 0;
+    acumulado = 0;
+    nMensajes = 0;
+    $("consola").innerHTML = CONSOLA_VACIA;
+    actualizarResumen();
+    leerMensajes();
+    pintar(true);
+  }
+
+  async function nuevaPartida() {
+    pausar();
+    if (modo !== "directo") return;
+    const mia = ++generacion;
+    const semilla = Math.max(0, parseInt($("semilla").value, 10) || 0);
+    $("semilla").value = semilla;
+    ponerEstado("Cargando los bots…");
+    let izq, der;
+    try {
+      izq = await claseBot($("sel-izq").value);
+      der = await claseBot($("sel-der").value);
+    } catch (e) {
+      if (mia !== generacion) return;
+      ponerEstado("Error en un bot", "error");
+      mostrarErrorCarga(textoError(e));
+      return;
+    }
+    if (mia !== generacion || modo !== "directo") {
+      izq[1].destroy(); der[1].destroy();
+      return;
+    }
+    try {
+      cambiarSesion(pw.nueva_directo(semilla, izq[0], izq[1], der[0], der[1]));
+    } finally {
+      izq[1].destroy(); der[1].destroy();
+    }
+    irA(0); // juega el primer tick: el fotograma 0 ya muestra las decisiones
+    ponerEstado("Listo", "listo");
+    $("sel-vista").value = $("sel-izq").value === "easy" && $("sel-der").value !== "easy" ? "1" : "0";
+  }
+
+  function mostrarErrorCarga(texto) {
+    const c = $("consola");
+    c.innerHTML = "";
+    const div = document.createElement("div");
+    div.className = "msg error";
+    div.innerHTML = '<span class="cab">no se pudo cargar el bot</span>\n<span class="cuerpo-msg"></span>';
+    div.querySelector(".cuerpo-msg").textContent = texto;
+    c.appendChild(div);
+    $("consola").closest("details").open = true;
+  }
+
+  async function reproducir(texto, nombre) {
+    pausar();
+    ponerEstado("Reproduciendo " + nombre + " con el motor…");
+    await new Promise((ok) => setTimeout(ok, 30));
+    try {
+      cambiarSesion(pw.Sesion.reproduccion(texto));
+      ponerEstado("Listo", "listo");
+    } catch (e) {
+      ponerEstado("Registro no válido", "error");
+      mostrarVerificacion({ ok: false, problemas: ["No es un registro de partida válido: " + textoError(e)] });
+      return;
+    }
+    mostrarVerificacion(resumen.verificacion);
+  }
+
+  function mostrarVerificacion(v) {
+    const caja = $("verificacion");
+    caja.classList.remove("oculto");
+    if (!v) { caja.className = "oculto"; return; }
+    if (v.abandono) {
+      caja.className = "verif aviso";
+      caja.textContent = `El constructor del bot de la ${v.abandono === "left" ? "izquierda" : "derecha"} falló: la partida no se jugó.`;
+      return;
+    }
+    if (v.ok) {
+      caja.className = "verif ok";
+      caja.textContent = "✔ Reproducción verificada: el motor da exactamente los mismos intercambios, sets y resultado que el registro.";
+      if (v.tiempo_excedido) {
+        caja.textContent += ` La partida se cortó porque el bot de la ${v.tiempo_excedido === "left" ? "izquierda" : "derecha"} superó el tiempo medio por llamada.`;
+      }
+      return;
+    }
+    caja.className = "verif mal";
+    caja.innerHTML = "✖ La reproducción no coincide con el registro:<ul></ul>";
+    for (const p of v.problemas) {
+      const li = document.createElement("li");
+      li.textContent = p;
+      caja.querySelector("ul").appendChild(li);
+    }
+  }
+
+  async function rellenarPartidas() {
+    // partidas/*.json (runner) y una carpeta por ejecución de evaluate --guardar,
+    // la más reciente primero; dentro, de la peor a la mejor partida si hay
+    // resumen.csv.
+    const sel = $("sel-partida");
+    const previo = sel.value;
+    const raiz = await listarCarpeta("partidas/");
+    const grupos = [];
+    const sueltos = raiz.ficheros.filter((n) => n.endsWith(".json")).sort(porNombre);
+    if (sueltos.length) grupos.push({ titulo: "partidas/", opciones: sueltos.map((n) => [n, n]) });
+    for (const carpeta of raiz.carpetas.sort(porNombre).reverse()) {
+      const contenido = await listarCarpeta("partidas/" + carpeta);
+      const jsons = contenido.ficheros.filter((n) => n.endsWith(".json")).sort(porNombre);
+      if (!jsons.length) continue;
+      let opciones = jsons.map((n) => [carpeta + n, n]);
+      if (contenido.ficheros.includes("resumen.csv")) {
+        try {
+          const filas = leerResumen(await leer("partidas/" + carpeta + "resumen.csv"));
+          const conRegistro = filas.filter((f) => jsons.includes(f.registro));
+          opciones = conRegistro.map((f) => [carpeta + f.registro,
+            `${f.registro} · ${(100 * Number(f.puntos)).toFixed(1)} % (${f.ganados}/${f.jugados}) · ` +
+            `${f.lado} · ${f.resultado}`]);
+          const vistos = new Set(conRegistro.map((f) => f.registro));
+          for (const n of jsons) if (!vistos.has(n)) opciones.push([carpeta + n, n]);
+        } catch (e) { /* sin resumen legible: orden por nombre */ }
+      }
+      grupos.push({ titulo: "partidas/" + carpeta, opciones });
+    }
+    sel.innerHTML = "";
+    const total = grupos.reduce((k, g) => k + g.opciones.length, 0);
+    sel.add(new Option(total ? "— elige un registro —" : "(no hay registros)", ""));
+    const valores = [];
+    for (const g of grupos) {
+      const og = document.createElement("optgroup");
+      og.label = g.titulo;
+      for (const [valor, texto] of g.opciones) { og.appendChild(new Option(texto, valor)); valores.push(valor); }
+      sel.appendChild(og);
+    }
+    if (valores.includes(previo)) sel.value = previo;
+  }
+
+  function actualizarResumen() {
+    resumen = JSON.parse(sesion.resumen());
+    const [ni, nd] = resumen.nombres;
+    $("nombre-izq").textContent = ni;
+    $("nombre-der").textContent = nd;
+    $("b-descargar").disabled = !(modo === "directo" && resumen.terminada);
+    const t = resumen.tiempos;
+    if (modo === "directo" && t && t[0] && t[1]) {
+      const f = (x, n) => `${n}: ${x.media_ms.toFixed(3)} ms de media, máx. ${x.maximo_ms.toFixed(1)} ms`;
+      $("tiempos").textContent = "Tiempos de decide (orientativos; en el navegador van más lentos y no se aplican límites): " +
+        f(t[0], ni) + " · " + f(t[1], nd) + ".";
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Avance
+  // -------------------------------------------------------------------------
+
+  function enDirectoAbierta() { return modo === "directo" && resumen && !resumen.terminada; }
+
+  function jugar(n, hastaEvento = false) {
+    const jugados = sesion.avanzar(n, hastaEvento);
+    total = sesion.total();
+    actualizarResumen();
+    leerMensajes();
+    return jugados;
+  }
+
+  function asegurar(indice) {
+    // En directo, garantiza que el fotograma ``indice`` exista y tenga ya las
+    // decisiones de los bots (comandos y dibujo de depuración): para eso hace
+    // falta haber jugado su tick, es decir, tener también el siguiente.
+    if (indice >= total - 1 && enDirectoAbierta()) jugar(indice - total + 2);
+    return Math.min(indice, enDirectoAbierta() ? total - 2 : total - 1);
+  }
+
+  function pausar() {
+    reproduciendo = false;
+    cancelar = true;
+    ui.play.textContent = "▶";
+  }
+
+  function alternar() {
+    if (reproduciendo) { pausar(); return; }
+    if (cursor >= total - 1 && !enDirectoAbierta()) cursor = 0;
+    reproduciendo = true;
+    cancelar = false;
+    acumulado = 0;
+    ultimoT = performance.now();
+    ui.play.textContent = "⏸";
+  }
+
+  function irA(indice) {
+    cursor = Math.max(0, asegurar(indice));
+    pintar(true);
+  }
+
+  function proximoEvento() {
+    pausar();
+    let j = sesion.buscar_evento(cursor);
+    if ((j === undefined || j === null) && enDirectoAbierta()) {
+      jugar(200000, true);
+      j = sesion.buscar_evento(cursor);
+    }
+    if (j !== undefined && j !== null) irA(j);
+  }
+
+  async function irAlFinal() {
+    if (trabajando) return;
+    pausar();
+    if (!enDirectoAbierta()) { irA(total - 1); return; }
+    cancelar = false;
+    trabajando = true;
+    try {
+      while (enDirectoAbierta() && !cancelar) {
+        const t0 = performance.now();
+        while (performance.now() - t0 < 40 && enDirectoAbierta()) jugar(500);
+        cursor = Math.max(0, total - 2);
+        pintar(true);
+        ponerEstado(`Jugando… tick ${cursor}`);
+        await new Promise((ok) => setTimeout(ok, 0));
+      }
+    } finally {
+      trabajando = false;
+      ponerEstado("Listo", "listo");
+    }
+    cursor = Math.max(0, enDirectoAbierta() ? total - 2 : total - 1);
+    pintar(true);
+  }
+
+  function bucle(t) {
+    if (reproduciendo && sesion) {
+      const dt = Math.min(0.1, (t - ultimoT) / 1000);
+      ultimoT = t;
+      const velocidad = Number(ui.velocidad.value);
+      if (velocidad === Infinity) {
+        const t0 = performance.now();
+        if (enDirectoAbierta()) {
+          while (performance.now() - t0 < 12 && enDirectoAbierta()) jugar(200);
+          cursor = enDirectoAbierta() ? total - 2 : total - 1;
+        } else {
+          cursor = Math.min(total - 1, cursor + 400);
+        }
+      } else {
+        acumulado += velocidad * dt;
+        const pasos = Math.floor(acumulado);
+        acumulado -= pasos;
+        if (pasos > 0) cursor = asegurar(cursor + pasos);
+      }
+      if (cursor >= total - 1 && !enDirectoAbierta()) pausar();
+      pintar(false);
+    }
+    requestAnimationFrame(bucle);
+  }
+
+  // -------------------------------------------------------------------------
+  // Mensajes de los bots
+  // -------------------------------------------------------------------------
+
+  function leerMensajes() {
+    const nuevos = JSON.parse(sesion.mensajes_desde(nMensajes));
+    if (!nuevos.length) return;
+    nMensajes += nuevos.length;
+    const c = $("consola");
+    if (c.firstElementChild && c.firstElementChild.classList.contains("nota")) c.innerHTML = "";
+    const soloErrores = $("solo-errores").checked;
+    const frag = document.createDocumentFragment();
+    for (const m of nuevos) {
+      const div = document.createElement("div");
+      div.className = `msg ${m.lado} ${m.tipo}`;
+      div.dataset.tick = m.tick;
+      if (soloErrores && m.tipo === "print") div.classList.add("oculto");
+      const lado = m.lado === "left" ? "izq." : "der.";
+      const cab = document.createElement("span");
+      cab.className = "cab";
+      cab.textContent = `tick ${m.tick} · ${lado} · ${m.tipo}\n`;
+      const cuerpo = document.createElement("span");
+      cuerpo.className = "cuerpo-msg";
+      cuerpo.textContent = m.texto;
+      div.append(cab, cuerpo);
+      frag.appendChild(div);
+    }
+    c.appendChild(frag);
+    while (c.childElementCount > 1500) c.firstElementChild.remove();
+    if (nuevos.some((m) => m.tipo === "error")) c.closest("details").open = true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Dibujo
+  // -------------------------------------------------------------------------
+
+  function pintar(forzarPaneles) {
+    if (!sesion) return;
+    const f = JSON.parse(pw.fotograma_json(sesion, cursor));
+    ui.tiempo.max = Math.max(0, enDirectoAbierta() ? total - 2 : total - 1);
+    ui.tiempo.value = cursor;
+    const ultimo = enDirectoAbierta() ? total - 2 : total - 1;
+    ui.etiqueta.textContent = `${f.tick} / ${ultimo}${enDirectoAbierta() ? "+" : ""}`;
+    pintarCampo(f);
+    pintarMarcador(f);
+    const ahora = performance.now();
+    if (forzarPaneles || ahora - ultimoPanel > 120) {
+      ultimoPanel = ahora;
+      pintarPaneles(f);
+    }
+    window.pong.fotograma = f;
+  }
+
+  function pintarCampo(f) {
+    const dpr = window.devicePixelRatio || 1;
+    const ancho = Math.round(ui.lienzo.clientWidth * dpr) || W;
+    const alto = Math.round(ancho * H / W);
+    if (ui.lienzo.width !== ancho || ui.lienzo.height !== alto) {
+      ui.lienzo.width = ancho; ui.lienzo.height = alto;
+    }
+    const s = ancho / W;
+    ctx.setTransform(s, 0, 0, s, 0, 0);
+    ctx.fillStyle = colores.field;
+    ctx.fillRect(0, 0, W, H);
+    // Línea central
+    ctx.strokeStyle = colores["field-line"];
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 12]);
+    ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
+    ctx.setLineDash([]);
+    // Planos de las caras de las raquetas
+    ctx.strokeStyle = "rgba(226,232,240,0.07)";
+    ctx.beginPath();
+    ctx.moveTo(X_IZQ, 0); ctx.lineTo(X_IZQ, H);
+    ctx.moveTo(X_DER, 0); ctx.lineTo(X_DER, H);
+    ctx.stroke();
+
+    if ($("ver-dep").checked) {
+      pintarDepuracion(f.depuracion[0], 0);
+      pintarDepuracion(f.depuracion[1], 1);
+    }
+    if ($("ver-estela").checked) {
+      const e = JSON.parse(pw.estela_json(sesion, cursor, ESTELA));
+      const n = e.length / 2;
+      for (let k = 0; k < n - 1; k++) {
+        ctx.globalAlpha = 0.05 + 0.35 * (k / n);
+        ctx.fillStyle = colores.ball;
+        ctx.beginPath(); ctx.arc(e[2 * k], e[2 * k + 1], R * (0.4 + 0.5 * k / n), 0, 2 * Math.PI); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    // Raquetas: la cara está en x = 30 (izq.) y x = 770 (der.)
+    ctx.fillStyle = colores.left;
+    ctx.fillRect(X_IZQ - PALA_G, f.pala_izq - PALA_H / 2, PALA_G, PALA_H);
+    ctx.fillStyle = colores.right;
+    ctx.fillRect(X_DER, f.pala_der - PALA_H / 2, PALA_G, PALA_H);
+    // Bola
+    if (f.fase !== "match_over") {
+      ctx.fillStyle = colores.ball;
+      ctx.beginPath(); ctx.arc(f.bola_x, f.bola_y, R, 0, 2 * Math.PI); ctx.fill();
+    }
+    // Rótulos
+    ctx.fillStyle = "rgba(226,232,240,0.75)";
+    ctx.textAlign = "center";
+    if (f.fase === "serving") {
+      ctx.font = "600 18px system-ui, sans-serif";
+      ctx.fillText(`Saque en ${f.saque_restante}`, W / 2, 40);
+    }
+    if (f.fase === "match_over" || (resumen && (resumen.abandono || resumen.tiempo_excedido) && cursor === total - 1)) {
+      ctx.fillStyle = "rgba(7,12,18,0.72)";
+      ctx.fillRect(0, H / 2 - 50, W, 100);
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "700 30px system-ui, sans-serif";
+      ctx.fillText(textoResultado(), W / 2, H / 2 + 10);
+    }
+  }
+
+  function textoResultado() {
+    if (!resumen) return "";
+    const [ni, nd] = resumen.nombres;
+    if (resumen.abandono) {
+      const quien = resumen.abandono === "left" ? ni : nd;
+      return `${quien} no pudo construirse: pierde sin jugar`;
+    }
+    if (resumen.tiempo_excedido) {
+      const quien = resumen.tiempo_excedido === "left" ? ni : nd;
+      return `${quien} superó el tiempo medio: pierde la partida`;
+    }
+    if (resumen.resultado === "draw") return "Empate técnico (20 nulos)";
+    if (resumen.resultado === "left") return `Gana ${ni} (izq.) ${resumen.sets[0]}–${resumen.sets[1]}`;
+    if (resumen.resultado === "right") return `Gana ${nd} (der.) ${resumen.sets[1]}–${resumen.sets[0]}`;
+    return "";
+  }
+
+  function pintarDepuracion(texto, lado) {
+    if (!texto) return;
+    let d;
+    try { d = JSON.parse(texto); } catch (e) { return; }
+    const color = lado === 0 ? colores.left : colores.right;
+    const gx = (x) => (lado === 0 ? x : W - x); // normalizado -> global
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.5;
+    if (d.trayectoria && d.trayectoria.length > 1) {
+      ctx.globalAlpha = 0.8;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      d.trayectoria.forEach(([x, y], k) => (k ? ctx.lineTo(gx(x), y) : ctx.moveTo(gx(x), y)));
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (d.puntos) {
+      ctx.globalAlpha = 0.9;
+      for (const [x, y] of d.puntos) {
+        ctx.beginPath(); ctx.arc(gx(x), y, 4, 0, 2 * Math.PI); ctx.stroke();
+      }
+    }
+    if (typeof d.objetivo_y === "number") {
+      const x = lado === 0 ? X_IZQ : X_DER;
+      const y = d.objetivo_y;
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x - 14, y); ctx.lineTo(x + 14, y);
+      ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 7, 0, 2 * Math.PI); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+  }
+
+  function pintarMarcador(f) {
+    $("puntos-izq").textContent = f.puntos[0];
+    $("puntos-der").textContent = f.puntos[1];
+    $("sets-izq").textContent = `sets ${f.sets[0]}`;
+    $("sets-der").textContent = `sets ${f.sets[1]}`;
+    $("saque-izq").classList.toggle("si", f.saca === "left" && f.fase !== "match_over");
+    $("saque-der").classList.toggle("si", f.saca === "right" && f.fase !== "match_over");
+    $("info-tick").textContent = `tick ${f.tick} · ${f.fase} · golpes ${f.golpes} · nulos ${f.nulos}`;
+  }
+
+  function fmt(x) {
+    return typeof x === "number" ? (Number.isInteger(x) ? String(x) : x.toFixed(6)) : String(x);
+  }
+
+  function pintarPaneles(f) {
+    const lado = Number($("sel-vista").value);
+    const estado = JSON.parse(sesion.estado_bot(cursor, lado));
+    const comando = f.comandos[lado];
+    const sinCampo = { ...estado };
+    delete sinCampo.field;
+    $("estado-bot").textContent =
+      JSON.stringify(sinCampo, null, 2) + "\n\n" +
+      (comando ? `→ decide devolvió: ${comando}` : "→ (sin comando: fin de la partida)") +
+      "\n\nstate[\"field\"] (constantes): " + JSON.stringify(estado.field);
+    const filas = [
+      ["fase", f.fase], ["bola x, y", `${fmt(f.bola_x)}, ${fmt(f.bola_y)}`],
+      ["vx", fmt(f.vx)], ["vy", fmt(f.vy)], ["ay (efecto)", fmt(f.ay)],
+      ["velocidad s", fmt(f.velocidad)],
+      ["raquetas (izq., der.)", `${fmt(f.pala_izq)}, ${fmt(f.pala_der)}`],
+      ["saca", f.saca === "left" ? "izquierda" : "derecha"],
+      ["ticks de saque", f.saque_restante],
+      ["comandos (izq., der.)", f.comandos[0] ? `${f.comandos[0]}, ${f.comandos[1]}` : "—"],
+    ];
+    const t = $("verdad");
+    t.innerHTML = "";
+    for (const [k, v] of filas) {
+      const a = document.createElement("span"); a.className = "k"; a.textContent = k;
+      const b = document.createElement("span"); b.textContent = v;
+      t.append(a, b);
+    }
+    const partes = [];
+    for (const l of [0, 1]) {
+      const txt = f.depuracion[l];
+      if (!txt) continue;
+      const d = JSON.parse(txt);
+      const nombre = resumen ? resumen.nombres[l] : (l ? "der." : "izq.");
+      const lineas = [`[${l ? "der." : "izq."}] ${nombre}`];
+      if (typeof d.objetivo_y === "number") lineas.push(`  objetivo_y = ${fmt(d.objetivo_y)}`);
+      if (d.trayectoria) lineas.push(`  trayectoria: ${d.trayectoria.length} puntos`);
+      if (d.puntos) lineas.push(`  puntos: ${d.puntos.length}`);
+      if (d.texto) lineas.push("  " + d.texto.replace(/\n/g, "\n  "));
+      partes.push(lineas.join("\n"));
+    }
+    $("dep-texto").textContent = partes.length ? partes.join("\n\n") :
+      (modo === "repro" ? "Las reproducciones no ejecutan los bots: no hay dibujo de depuración." : "Ningún bot define self.depuracion en este tick.");
+  }
+
+  // -------------------------------------------------------------------------
+  // Controles
+  // -------------------------------------------------------------------------
+
+  function cambiarModo(nuevo) {
+    if (nuevo === modo) return;
+    pausar();
+    modo = nuevo;
+    $("tab-directo").setAttribute("aria-selected", String(modo === "directo"));
+    $("tab-repro").setAttribute("aria-selected", String(modo === "repro"));
+    $("panel-directo").classList.toggle("oculto", modo !== "directo");
+    $("panel-repro").classList.toggle("oculto", modo !== "repro");
+    if (modo === "directo") {
+      nuevaPartida();
+    } else {
+      rellenarPartidas();
+      $("verificacion").className = "oculto";
+      if (sesion) { sesion.destroy(); sesion = null; }
+      limpiarVista();
+    }
+  }
+
+  function limpiarVista() {
+    total = 0; cursor = 0; resumen = null;
+    ui.tiempo.max = 0; ui.tiempo.value = 0; ui.etiqueta.textContent = "0 / 0";
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = colores.field;
+    ctx.fillRect(0, 0, ui.lienzo.width, ui.lienzo.height);
+    $("nombre-izq").textContent = "—"; $("nombre-der").textContent = "—";
+    $("estado-bot").textContent = "—"; $("verdad").innerHTML = ""; $("dep-texto").textContent = "—";
+  }
+
+  function conectarControles() {
+    $("tab-directo").onclick = () => cambiarModo("directo");
+    $("tab-repro").onclick = () => cambiarModo("repro");
+    ui.play.onclick = () => sesion && alternar();
+    $("b-inicio").onclick = () => { pausar(); sesion && irA(0); };
+    $("b-atras").onclick = () => { pausar(); sesion && irA(cursor - 1); };
+    $("b-adelante").onclick = () => { pausar(); sesion && irA(cursor + 1); };
+    $("b-evento").onclick = () => sesion && proximoEvento();
+    $("b-final").onclick = () => sesion && irAlFinal();
+    ui.tiempo.oninput = () => { pausar(); sesion && irA(Number(ui.tiempo.value)); };
+    $("b-dado").onclick = () => { $("semilla").value = semillaAzar(); nuevaPartida(); };
+    $("b-nueva").onclick = () => nuevaPartida();
+    $("b-recargar").onclick = async () => { await rellenarSelectoresBots(); await nuevaPartida(); };
+    $("sel-izq").onchange = () => nuevaPartida();
+    $("sel-der").onchange = () => nuevaPartida();
+    $("semilla").onchange = () => nuevaPartida();
+    $("sel-vista").onchange = () => pintar(true);
+    $("ver-estela").onchange = () => pintar(true);
+    $("ver-dep").onchange = () => pintar(true);
+    $("solo-errores").onchange = () => {
+      const solo = $("solo-errores").checked;
+      for (const m of $("consola").querySelectorAll(".msg.print")) m.classList.toggle("oculto", solo);
+    };
+    $("consola").onclick = (ev) => {
+      const m = ev.target.closest(".msg");
+      if (m && m.dataset.tick !== undefined && sesion) { pausar(); irA(Number(m.dataset.tick)); }
+    };
+    $("b-descargar").onclick = () => {
+      const texto = sesion.json_registro();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([texto], { type: "application/json" }));
+      a.download = `partida_${resumen.semilla}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+    $("b-listar").onclick = () => rellenarPartidas();
+    $("sel-partida").onchange = async () => {
+      const n = $("sel-partida").value;
+      if (!n) return;
+      try {
+        await reproducir(await leer("partidas/" + n), n);
+      } catch (e) {
+        ponerEstado("No se pudo leer el registro", "error");
+      }
+    };
+    $("fichero").onchange = async () => {
+      const f = $("fichero").files[0];
+      if (f) await reproducir(await f.text(), f.name);
+      $("fichero").value = "";
+    };
+    document.addEventListener("keydown", (ev) => {
+      if (!sesion || ev.target.closest("input, select, textarea")) return;
+      if (ev.key === " ") { ev.preventDefault(); alternar(); }
+      else if (ev.key === "ArrowRight" && ev.shiftKey) { ev.preventDefault(); proximoEvento(); }
+      else if (ev.key === "ArrowRight") { ev.preventDefault(); pausar(); irA(cursor + 1); }
+      else if (ev.key === "ArrowLeft") { ev.preventDefault(); pausar(); irA(cursor - 1); }
+    });
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { leerColores(); pintar(true); });
+    window.addEventListener("resize", () => pintar(false));
+  }
+
+  // -------------------------------------------------------------------------
+  // Interfaz para pruebas y para la consola del navegador
+  // -------------------------------------------------------------------------
+
+  let resolverListo;
+  window.pong = {
+    listo: new Promise((ok) => { resolverListo = ok; }),
+    resolverListo: () => resolverListo(),
+    fotograma: null,
+    resumen: () => resumen,
+    cursor: () => cursor,
+    total: () => total,
+    irA: (i) => irA(i),
+    irAlFinal: () => irAlFinal(),
+    nuevaPartida: () => nuevaPartida(),
+    reproducir: (texto, nombre = "registro") => reproducir(texto, nombre),
+    cambiarModo: (m) => cambiarModo(m),
+    instantanea: () => sesion ? JSON.parse(pw.fotograma_json(sesion, cursor)) : null,
+    _sesion: () => sesion,
+  };
+
+  arrancar();
+})();
+</script>
+</body>
+</html>

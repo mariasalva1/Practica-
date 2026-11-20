@@ -1,0 +1,26 @@
+# Entorno
+.venv/
+__pycache__/
+*.py[cod]
+
+# Herramientas
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Registros de partida (§10, D46): los JSON se suben al repositorio (ocupan
+# poco y no se pierden al borrar el Codespace); los CSV no, porque son pesados
+# y se regeneran idénticos desde el JSON con `python -m pong.registro`. El
+# resumen.csv de cada ejecución de evaluate sí se sube.
+partida_*.csv
+partidas/**/*.csv
+!partidas/**/resumen.csv
+
+# Notebook de análisis: exportaciones y caché de Marimo
+analisis*.html
+__marimo__/
+
+# Sistema
+.DS_Store
+Thumbs.db

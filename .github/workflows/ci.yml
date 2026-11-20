@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+
+jobs:
+  test:
+    name: Tests y estilo (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # ARM64 solo en la plantilla (D33); las copias de los alumnos, solo x86-64.
+        runner: ${{ fromJSON(github.repository == 'UIB-23200-Programacion/practica-programacion-23200' && '["ubuntu-24.04", "ubuntu-24.04-arm"]' || '["ubuntu-24.04"]') }}
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v6
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Instalar Python (versión fijada en .python-version)
+        run: uv python install
+
+      - name: Instalar dependencias (exactamente las de uv.lock)
+        run: uv sync --locked
+
+      - name: Comprobar el estilo con Ruff
+        run: uv run ruff check .
+
+      - name: Ejecutar los tests con pytest
+        run: uv run pytest
+
+  pong-html:
+    name: pong.html en el navegador
+    # Solo en la plantilla, como ARM64 (D33): comprueba que la página carga
+    # Pyodide desde la CDN y que el motor da en el navegador exactamente los
+    # mismos registros que en CPython. Las copias de los alumnos no lo ejecutan.
+    if: github.repository == 'UIB-23200-Programacion/practica-programacion-23200'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v6
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Instalar Python y dependencias
+        run: |
+          uv python install
+          uv sync --locked
+
+      - name: Instalar Chromium para Playwright
+        run: uv run --with playwright==1.56.0 python -m playwright install --with-deps chromium
+
+      - name: Probar pong.html
+        run: uv run --with playwright==1.56.0 python -m pytest .github/pruebas -q

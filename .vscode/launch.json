@@ -1,0 +1,49 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Archivo actual",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: pytest (todos)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["tests", "-v", "--no-header"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: pytest (archivo actual)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["${file}", "-v"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Pong: jugar una partida contra Easy",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pong.runner",
+            "args": ["--rival", "easy", "--semilla", "1"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Pong: evaluar mi bot contra Medium (20 partidas)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pong.evaluate",
+            "args": ["--rival", "medium", "--partidas", "20"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

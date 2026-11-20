@@ -1,0 +1,6 @@
+# LF en todo el repositorio, también en Windows (D26)
+* text=auto eol=lf
+
+# Binarios
+*.whl binary
+*.png binary
